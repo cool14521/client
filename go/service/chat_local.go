@@ -68,7 +68,9 @@ func (h *chatLocalHandler) getChatUI(sessionID int) libkb.ChatUI {
 	return h.BaseHandler.getChatUI(sessionID)
 }
 
-func (h *chatLocalHandler) GetInboxNonblockLocal(ctx context.Context, arg chat1.GetInboxNonblockLocalArg) (res chat1.GetInboxNonblockLocalRes, err error) {
+func (h *chatLocalHandler) GetInboxNonblockLocal(ctx context.Context,
+	arg chat1.GetInboxNonblockLocalArg) (res chat1.GetInboxNonblockLocalRes, err error) {
+
 	var breaks []keybase1.TLFIdentifyFailure
 	ctx = chat.Context(ctx, arg.IdentifyBehavior, &breaks, h.identNotifier)
 	defer h.Trace(ctx, func() error { return err }, "GetInboxNonblockLocal")()
