@@ -5,6 +5,7 @@ package service
 
 import (
 	"fmt"
+	"strings"
 
 	"golang.org/x/net/context"
 
@@ -63,6 +64,11 @@ func (h *tlfHandler) CryptKeys(ctx context.Context, arg keybase1.TLFQuery) (keyb
 	defer h.Trace(ctx, func() error { return err },
 		fmt.Sprintf("CryptKeys(tlf=%s,mode=%v,handler=%v)", arg.TlfName, arg.IdentifyBehavior, h.BaseHandler.xp != nil))()
 
+	ib, err := h.identifyTLF(ctx, arg, true)
+	if err != nil {
+		return keybase1.GetTLFCryptKeysRes{}, err
+	}
+
 	tlfClient, err := h.tlfKeysClient()
 	if err != nil {
 		return keybase1.GetTLFCryptKeysRes{}, err
@@ -73,11 +79,15 @@ func (h *tlfHandler) CryptKeys(ctx context.Context, arg keybase1.TLFQuery) (keyb
 		return resp, err
 	}
 
+	// for now, replace id breaks with those calculated here
+	resp.NameIDBreaks.Breaks.Breaks = ib
+
 	if in := chat.CtxIdentifyNotifier(ctx); in != nil {
 		in.Send(resp.NameIDBreaks)
 	}
 	if ok {
-		*breaks = appendBreaks(*breaks, resp.NameIDBreaks.Breaks.Breaks)
+		// *breaks = appendBreaks(*breaks, resp.NameIDBreaks.Breaks.Breaks)
+		*breaks = appendBreaks(*breaks, ib)
 	}
 	return resp, nil
 }
@@ -133,4 +143,36 @@ func (h *tlfHandler) CompleteAndCanonicalizePrivateTlfName(ctx context.Context, 
 	}
 
 	return resp.NameIDBreaks, nil
+}
+
+func (h *tlfHandler) identifyTLF(ctx context.Context, arg keybase1.TLFQuery, private bool) ([]keybase1.TLFIdentifyFailure, error) {
+	var fails []keybase1.TLFIdentifyFailure
+	pieces := strings.Split(arg.TlfName, ",")
+	for _, p := range pieces {
+		f, err := h.identifyUser(ctx, p, private, arg.IdentifyBehavior)
+		if err != nil {
+			return nil, err
+		}
+		fails = append(fails, f)
+	}
+	return fails, nil
+}
+
+func (h *tlfHandler) identifyUser(ctx context.Context, assertion string, private bool, idBehavior keybase1.TLFIdentifyBehavior) (keybase1.TLFIdentifyFailure, error) {
+	reason := "You accessed a public conversation."
+	if private {
+		reason = fmt.Sprintf("You accessed a private conversation with %s.", assertion)
+	}
+
+	arg := keybase1.Identify2Arg{
+		UserAssertion:    assertion,
+		UseDelegateUI:    true,
+		Reason:           keybase1.IdentifyReason{Reason: reason},
+		CanSuppressUI:    true,
+		IdentifyBehavior: idBehavior,
+	}
+
+	res, err := eng.Run(ectx, arg)
+
+	return keybase1.TLFIdentifyFailure{}, nil
 }
